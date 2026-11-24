@@ -1,0 +1,6 @@
+<!-- File: app/src/main/res/values/strings.xml -->
+<resources>
+    <string name="app_name">4K EIS Camera</string>
+    <string name="shortcut_short_label">4k EIS</string>
+    <string name="shortcut_long_label">Быстрая запись 4k EIS</string>
+</resources>

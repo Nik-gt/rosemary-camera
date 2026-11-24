@@ -1,0 +1,14 @@
+# Build outputs
+build/
+.gradle/
+!build/outputs/apk/release/*.apk
+
+# IDE
+.idea/
+*.iml
+
+# OS
+Thumbs.db
+
+# Old broken build script
+!build-project-to-apk-gradle.bat
