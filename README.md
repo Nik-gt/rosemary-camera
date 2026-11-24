@@ -1,68 +1,71 @@
 # rosemary-camera
 
-Original base project for **Poco M5S** (M2101K7AG, "rosemary", MediaTek Helio G99).
+Базовый проект для **Poco M5S** (rosemary, 2207117BPG), **Redmi Note 10S** (vili, M2101K7AG) и других устройств на **MediaTek Helio G99** (MT6769V) с MIUI 14.
 
-## Why this fork?
+## Главная фишка
 
-Standard Android Camera2 4K30 on Poco M5S with MIUI 14 produces stuttered/laggy video —
-the HAL drops frames or the EIS buffer overflows.
+Обычная стоковая камера Xiaomi на Poco M5S умеет 4K, но **без EIS** (стабилизация). На 1080p30 EIS есть, но шумодав убивает детализацию.
 
-## The hack: `SCALER_CROP_REGION`
+Этот проект включает **4K30 со стабилизацией** — более сложный режим, чем стоковый 4K (без стаба) или стоковый 1080p30 EIS.
+
+### Почему 4K30 EIS без лагов:
+
+| Сток (1080p30 EIS) | Этот проект (4K30 EIS) |
+|---|---|
+| EIS лагает на движущемся | **Без лагов и смазов** |
+| Шумодав убирает все детали | **MFNR** (Multi-Frame Noise Reduction) — шумит меньше, детали видны |
+| Нет 4K со стабилизацией | ✅ 4K30 EIS работает плавно |
+
+### Хак: SCALER_CROP_REGION
 
 ```kotlin
-val crop = Rect(0, 434, 4624, 3038)
+val crop = Rect(0, 434, 4624, 3038)  // 4K EIS viewport OV64B
 requestBuilder.set(CaptureRequest.SCALER_CROP_REGION, crop)
 ```
 
-This crops the sensor output to **4624×3038** (exactly the 4K EIS viewport of the OV64B sensor
-used in rosemary). The MTK HAL's EIS engine works on this cropped region and produces
-smooth 4K30 video — no dropped frames, no macroblocking.
+Камера OV64B снимает с сенсора 4624×3038. Если не обрезать — EIS-буфер переполняется, кадр падает. Обрезка через `SCALER_CROP_REGION` даёт стабилизатору ровно столько пикселей, сколько ему нужно.
 
-**Key constants:**
+### Ключевые параметры:
 
-| Constant | Value | Purpose |
-|----------|-------|---------|
-| `SCALER_CROP_REGION` | `Rect(0, 434, 4624, 3038)` | 4K viewport for stable EIS |
-| `SessionConfiguration` | `0x8004` | MTK-specific session config |
-| `CONTROL_AE_TARGET_FPS_RANGE` | `Range(30, 30)` | Locks at 30fps, prevents HAL dropping to 20 |
-| `setCaptureRate(15.0)` | extra buffers | Night/Ultra modes (not frame rate) |
+| Параметр | Значение | Зачем |
+|---|---|---|
+| `SCALER_CROP_REGION` | `Rect(0, 434, 4624, 3038)` | 4K viewport, EIS без лагов |
+| `SessionConfiguration(0x8004)` | — | MTK-специфичный конфиг сессии |
+| `CONTROL_AE_TARGET_FPS_RANGE` | `Range(30, 30)` | Фикс 30fps, HAL не роняет на 20 |
+| MFNR (Multi-Frame Noise Reduction) | включён | Вместо стокового шумодава — меньше шумов, детали видны |
 
-## Structure
+## Режимы (8 кнопок на экране)
+
+| # | Режим | Разрешение | Стаб | Шум |
+|---|---|---|---|---|
+| 1 | 4K | 4K30 | ✅ | MFNR |
+| 2 | Night | 4K30 зелёный | ✅ | MFNR + матрица |
+| 3 | Night1.5x | 4K30 1.5× zoom | ✅ | MFNR + зелёный |
+| 4 | Night4K | 4K30 | ✅ | MFNR + зелёный |
+| 5 | NightColor | 4K30 | ✅ | MFNR (цветной) |
+| 6 | 1080p | 1080p30 | — | стоковый шумодав |
+| 7 | Zoom1.5x | 4K30 1.5× | ✅ | MFNR |
+| 8 | Zoom2.0x | 4K30 2.0× | ✅ | MFNR |
+
+## Структура
 
 ```
 app/src/main/java/com/camera/eisenabler/
-  MainActivity.kt          — camera preview + recording logic
-  BackgroundRecordService.kt — foreground service (WakeLock, notification)
-  CameraWidgetProvider.kt   — home-screen widget (1080p, 4K)
-
-app/src/main/res/layout/
-  activity_main.xml         — 8 mode buttons + zoom + record
-  widget_layout.xml         — home widget
+  MainActivity.kt          — камера, превью, запись
+  BackgroundRecordService.kt — фоновая запись (WakeLock + уведомление)
+  CameraWidgetProvider.kt   — виджет на домашний экран (1080p, 4K)
 ```
 
-## Modes (all from one session)
+## Как собрать на другом ПК
 
-| # | Mode | Crop | Notes |
-|---|------|------|-------|
-| 1 | 4K | 4624×3038 | Default, EIS enabled |
-| 2 | Night | 4624×3038 | + ColorSpaceTransform (green-only matrix) |
-| 3 | Night1.5x | center-crop of 4K | 1.5× zoom via center-crop |
-| 4 | Night4K | 4624×3038 | Same crop, green matrix |
-| 5 | NightColor | 4624×3038 | Color (no matrix), night vendor tags |
-| 6 | 1080p | 3464×2384 | Center-crop of 4K → 1080p |
-| 7 | Zoom1.5x | center-crop of 4K | 1.5× zoom only |
-| 8 | Zoom2.0x | center-crop of 4K | 2.0× zoom only |
-
-## Build on another PC
-
-1. Copy project
-2. Edit `local.properties`: `sdk.dir=D:\Program\Java\Android SDK` (or your path)
+1. Скопировать проект
+2. `local.properties`: `sdk.dir=C:/Program Files/MyApps/Java/Android SDK` (или ваш путь)
 3. `gradle assembleRelease` → `app/build/outputs/apk/release/app-release.apk`
 
-**Branches:**
-- `master` — source code only (no APK)
-- `releases` — signed APK (debug-keystore signed, for testing)
+**Ветки:**
+- `master` — исходный код (без APK)
+- GitHub **Release** v0.1.0 — подписанный APK для скачивания
 
-## License
+## Лицензия
 
-No license file — free to use, modify, fork.
+Без лицензии — используйте, форкайте, модифицируйте.
